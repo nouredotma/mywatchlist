@@ -24,7 +24,8 @@ import {
   Sparkles,
   Calendar,
   MessageSquare,
-  Play
+  Play,
+  ChevronDown
 } from 'lucide-react'
 
 interface WatchlistItem {
@@ -50,7 +51,6 @@ interface SearchResult {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const dropdownRef = useRef<HTMLDivElement>(null)
   
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,7 +62,13 @@ export default function DashboardPage() {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false)
+  const [isTypeFilterDropdownOpen, setIsTypeFilterDropdownOpen] = useState(false)
+  const [isStatusFilterDropdownOpen, setIsStatusFilterDropdownOpen] = useState(false)
   const [detailItem, setDetailItem] = useState<WatchlistItem | null>(null)
+
+  const profileDropdownRef = useRef<HTMLDivElement>(null)
+  const typeDropdownRef = useRef<HTMLDivElement>(null)
+  const statusDropdownRef = useRef<HTMLDivElement>(null)
 
   const [searchType, setSearchType] = useState<'movie_tv' | 'anime'>('movie_tv')
   const [modalSearchQuery, setModalSearchQuery] = useState('')
@@ -116,8 +122,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(target)) {
         setIsProfileDropdownOpen(false)
+      }
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(target)) {
+        setIsTypeFilterDropdownOpen(false)
+      }
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
+        setIsStatusFilterDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -256,14 +269,14 @@ create policy "Allow all service role access" on public.watchlist
   }
 
   return (
-    <div className="min-h-screen w-full bg-white flex flex-col px-5 pt-5 pb-8 font-sans text-zinc-800 select-none relative">
+    <div className="min-h-screen w-full bg-white flex flex-col px-3 md:px-5 pt-5 pb-8 font-sans text-zinc-800 select-none relative">
       
-      {/* ---- ROW 1: Profile (left), Search (perfectly centered & widened), Add media (right) ---- */}
-      <div className="flex items-center justify-between w-full mb-3">
+      {/* ---- ROW 1: Profile (left on desktop, right on mobile), Search (widen/center), Add media (right, hidden on mobile) ---- */}
+      <div className="flex items-center gap-3 w-full mb-3">
         
-        {/* LEFT: Profile dropdown */}
-        <div className="flex-1 flex justify-start">
-          <div className="relative" ref={dropdownRef}>
+        {/* Profile dropdown */}
+        <div className="order-2 md:order-1 flex-shrink-0 md:flex-1 md:flex md:justify-start" ref={profileDropdownRef}>
+          <div className="relative">
             <button
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="w-10 h-10 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-medium text-[#ff0000] flex items-center justify-center cursor-pointer hover:bg-zinc-100 transition-colors"
@@ -271,7 +284,7 @@ create policy "Allow all service role access" on public.watchlist
               NM
             </button>
             {isProfileDropdownOpen && (
-              <div className="absolute left-0 mt-2 w-40 bg-white border border-zinc-200 rounded-2xl p-1.5 z-50">
+              <div className="absolute right-0 md:left-0 mt-2 w-40 bg-white border border-zinc-200 rounded-2xl p-1.5 z-50 shadow-sm">
                 <button
                   onClick={() => { handleLogout(); setIsProfileDropdownOpen(false) }}
                   className="w-full text-left px-3.5 py-2 rounded-xl text-xs hover:bg-red-50 text-red-500 transition-colors flex items-center gap-2 cursor-pointer font-medium"
@@ -284,9 +297,9 @@ create policy "Allow all service role access" on public.watchlist
           </div>
         </div>
 
-        {/* CENTER: Search input (centered in center of the row & widened) */}
-        <div className="flex-initial">
-          <div className="relative w-80 sm:w-[450px]">
+        {/* Search input (full width on mobile, centered on desktop) */}
+        <div className="order-1 md:order-2 flex-1 md:flex-initial md:flex md:justify-center">
+          <div className="relative w-full md:w-80 lg:w-[450px]">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
               <Search className="w-3.5 h-3.5" />
             </div>
@@ -300,8 +313,8 @@ create policy "Allow all service role access" on public.watchlist
           </div>
         </div>
 
-        {/* RIGHT: Add media */}
-        <div className="flex-1 flex justify-end">
+        {/* Add media (Desktop only) */}
+        <div className="order-3 hidden md:flex md:flex-1 md:justify-end">
           <button
             onClick={() => setIsAddModalOpen(true)}
             className="bg-[#ff0000] hover:bg-[#d60000] text-white font-medium px-5 py-2 rounded-full flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.97] text-xs h-10 shrink-0"
@@ -312,62 +325,111 @@ create policy "Allow all service role access" on public.watchlist
         </div>
       </div>
 
-      {/* ---- ROW 2: Filter row (centered) with Type and Status sliding pills side-by-side ---- */}
-      <div className="flex flex-wrap items-center justify-center gap-4 mb-6 w-full">
+      {/* ---- ROW 2: Filter row with two select-like dropdown buttons (Type and Status) ---- */}
+      <div className="flex items-center justify-center gap-3 mb-6 w-full relative">
         
-        {/* Group 1: Type Sliding Pills Container */}
-        <div className="flex items-center bg-zinc-50 border border-zinc-200 rounded-full p-0.5 h-10 shrink-0 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'all', label: 'All types' },
-            { id: 'movie', label: 'Movies' },
-            { id: 'tv', label: 'TV shows' },
-            { id: 'anime', label: 'Anime' }
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTypeFilter(t.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all h-full flex items-center whitespace-nowrap border ${
-                activeTypeFilter === t.id
-                  ? 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Type Filter Select-Dropdown */}
+        <div className="relative" ref={typeDropdownRef}>
+          <button
+            onClick={() => setIsTypeFilterDropdownOpen(!isTypeFilterDropdownOpen)}
+            className="h-10 px-4 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-medium text-zinc-700 flex items-center gap-1.5 cursor-pointer hover:bg-zinc-100 transition-colors"
+          >
+            <span>Type: {
+              activeTypeFilter === 'movie' ? 'Movies' :
+              activeTypeFilter === 'tv' ? 'TV shows' :
+              activeTypeFilter === 'anime' ? 'Anime' : 'All types'
+            }</span>
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+          </button>
+          {isTypeFilterDropdownOpen && (
+            <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-40 bg-white border border-zinc-200 rounded-2xl p-1.5 z-40 shadow-sm">
+              {[
+                { id: 'all', label: 'All types' },
+                { id: 'movie', label: 'Movies' },
+                { id: 'tv', label: 'TV shows' },
+                { id: 'anime', label: 'Anime' }
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => { setActiveTypeFilter(t.id); setIsTypeFilterDropdownOpen(false) }}
+                  className={`w-full text-left px-3.5 py-2 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer font-medium ${
+                    activeTypeFilter === t.id
+                      ? 'bg-zinc-50 text-[#ff0000]'
+                      : 'hover:bg-zinc-50 text-zinc-600'
+                  }`}
+                >
+                  <span>{t.label}</span>
+                  {activeTypeFilter === t.id && <Check className="w-3.5 h-3.5" />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Group 2: Status Sliding Pills Container */}
-        <div className="flex items-center bg-zinc-50 border border-zinc-200 rounded-full p-0.5 h-10 shrink-0 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'all', label: 'All entries' },
-            { id: 'watching', label: 'Watching' },
-            { id: 'plan_to_watch', label: 'Plan to watch' },
-            { id: 'completed', label: 'Completed' }
-          ].map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveStatusFilter(filter.id)}
-              className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all h-full flex items-center whitespace-nowrap border ${
-                activeStatusFilter === filter.id
-                  ? 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+        {/* Status Filter Select-Dropdown */}
+        <div className="relative" ref={statusDropdownRef}>
+          <button
+            onClick={() => setIsStatusFilterDropdownOpen(!isStatusFilterDropdownOpen)}
+            className="h-10 px-4 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-medium text-zinc-700 flex items-center gap-1.5 cursor-pointer hover:bg-zinc-100 transition-colors"
+          >
+            <span>Status: {
+              activeStatusFilter === 'watching' ? 'Watching' :
+              activeStatusFilter === 'plan_to_watch' ? 'Plan to watch' :
+              activeStatusFilter === 'completed' ? 'Completed' : 'All entries'
+            }</span>
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+          </button>
+          {isStatusFilterDropdownOpen && (
+            <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-44 bg-white border border-zinc-200 rounded-2xl p-1.5 z-40 shadow-sm">
+              {[
+                { id: 'all', label: 'All entries' },
+                { id: 'watching', label: 'Watching' },
+                { id: 'plan_to_watch', label: 'Plan to watch' },
+                { id: 'completed', label: 'Completed' }
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => { setActiveStatusFilter(s.id); setIsStatusFilterDropdownOpen(false) }}
+                  className={`w-full text-left px-3.5 py-2 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer font-medium ${
+                    activeStatusFilter === s.id
+                      ? 'bg-zinc-50 text-[#ff0000]'
+                      : 'hover:bg-zinc-50 text-zinc-600'
+                  }`}
+                >
+                  <span>{s.label}</span>
+                  {activeStatusFilter === s.id && <Check className="w-3.5 h-3.5" />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>
 
       {/* ---- CONTENT AREA ---- */}
       {loading ? (
-        <div className="h-64 w-full flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 text-[#ff0000] animate-spin" />
-            <span className="text-zinc-400 text-sm font-medium">Loading your watchlist...</span>
-          </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 pb-8">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="animate-pulse rounded-lg md:rounded-xl aspect-[2/3] bg-zinc-100 flex flex-col justify-between p-3 relative overflow-hidden"
+            >
+              {/* Type badge skeleton */}
+              <div className="w-10 h-4.5 bg-zinc-200/80 rounded-full" />
+              {/* Details skeleton */}
+              <div className="space-y-1.5 mt-auto">
+                {/* Status dot + text skeleton */}
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-zinc-200" />
+                  <div className="w-14 h-3 bg-zinc-200 rounded" />
+                </div>
+                {/* Title skeleton */}
+                <div className="w-full h-4 bg-zinc-200 rounded" />
+                {/* Year skeleton */}
+                <div className="w-8 h-3 bg-zinc-200 rounded" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : dbError && dbError.includes('Could not find the table') ? (
         <div className="bg-zinc-50 border border-zinc-200 rounded-3xl p-8 max-w-2xl mx-auto my-8 text-center">
@@ -435,7 +497,7 @@ create policy "Allow all service role access" on public.watchlist
                 setEditStatus(item.status)
                 setEditNotes(item.notes || '')
               }}
-              className="group relative cursor-pointer rounded-xl overflow-hidden aspect-[2/3] bg-zinc-200"
+              className="group relative cursor-pointer rounded-lg md:rounded-xl overflow-hidden aspect-[2/3] bg-zinc-200"
             >
               {/* Poster image */}
               {item.poster_url ? (
@@ -454,8 +516,8 @@ create policy "Allow all service role access" on public.watchlist
               )}
 
               {/* Type badge - always visible, top left, fully rounded, white bg */}
-              <div className="absolute top-2.5 left-2.5 z-10">
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-white text-zinc-700">
+              <div className="absolute -top-0.5 left-1 md:top-1 md:left-1.5 z-10">
+                <span className="px-1.5 md:px-2.5 py-0.5 md:py-1 rounded-full text-[9px] md:text-[11px] font-medium bg-white text-zinc-700">
                   {item.type === 'tv' ? 'TV' : item.type === 'movie' ? 'Movie' : 'Anime'}
                 </span>
               </div>
@@ -648,19 +710,19 @@ create policy "Allow all service role access" on public.watchlist
       {/* ---- ADD MEDIA MODAL ---- */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4">
-          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-4xl max-h-[85vh] flex flex-col p-6 select-none text-zinc-800 animate-scale-up">
-            <div className="flex items-center justify-between pb-4 border-b border-zinc-200 flex-shrink-0">
+          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-3xl max-h-[80vh] flex flex-col p-5 select-none text-zinc-800 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-200 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-center text-[#ff0000]"><Plus className="w-4 h-4" /></div>
-                <h3 className="font-medium text-lg">Add new media</h3>
+                <h3 className="font-medium text-base">Add new media</h3>
               </div>
               <button onClick={() => { setIsAddModalOpen(false); setSelectedMedia(null); setSearchResults([]); setModalSearchQuery('') }} className="text-zinc-400 hover:text-zinc-700 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col md:flex-row gap-6 py-6">
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row gap-5 py-4">
               {/* Left: search */}
               <div className="flex-1 flex flex-col min-w-0">
-                <form onSubmit={handleMediaSearch} className="flex gap-2.5 mb-4 flex-shrink-0">
+                <form onSubmit={handleMediaSearch} className="flex gap-2 mb-3.5 flex-shrink-0">
                   <div className="bg-zinc-50 border border-zinc-200 rounded-full p-0.5 shrink-0 flex">
                     <button type="button" onClick={() => { setSearchType('movie_tv'); setSearchResults([]); setSelectedMedia(null) }}
                       className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${searchType === 'movie_tv' ? 'bg-[#ff0000] text-white' : 'text-zinc-400 hover:text-zinc-600'}`}>
@@ -674,14 +736,27 @@ create policy "Allow all service role access" on public.watchlist
                   <input type="text" value={modalSearchQuery} onChange={(e) => setModalSearchQuery(e.target.value)}
                     placeholder={searchType === 'movie_tv' ? "Search TMDB..." : "Search AniList..."}
                     className="flex-1 bg-zinc-50 border border-zinc-200 rounded-full px-5 py-2.5 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-[#ff0000] font-normal" />
-                  <button type="submit" disabled={isSearching} className="bg-zinc-50 border border-zinc-200 hover:border-zinc-300 text-zinc-700 font-medium px-5 rounded-full text-xs cursor-pointer flex items-center gap-1.5">
-                    {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <button type="submit" className="bg-zinc-50 border border-zinc-200 hover:border-zinc-300 text-zinc-700 font-medium px-5 rounded-full text-xs cursor-pointer flex items-center gap-1.5">
+                    <Search className="w-3.5 h-3.5" />
                     <span>Search</span>
                   </button>
                 </form>
-                <div className="flex-1 overflow-y-auto bg-zinc-50 border border-zinc-200 rounded-2xl p-3 min-h-[250px]">
+                <div className="flex-1 overflow-y-auto bg-zinc-50 border border-zinc-200 rounded-2xl p-2.5 min-h-[220px] custom-scrollbar">
                   {isSearching ? (
-                    <div className="h-full w-full flex items-center justify-center"><Loader2 className="w-6 h-6 text-[#ff0000] animate-spin" /></div>
+                    <div className="space-y-1.5 animate-pulse">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="p-1.5 rounded-xl flex items-center gap-2 border border-transparent bg-white/40">
+                          <div className="w-12 h-16 bg-zinc-200 rounded-lg shrink-0" />
+                          <div className="flex-1 space-y-2">
+                            <div className="w-3/4 h-3.5 bg-zinc-200 rounded" />
+                            <div className="flex items-center gap-2">
+                              <div className="w-10 h-4 bg-zinc-200 rounded-full" />
+                              <div className="w-12 h-3 bg-zinc-200 rounded" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : searchError ? (
                     <div className="h-full w-full flex items-center justify-center p-4 text-center"><p className="text-zinc-400 text-xs max-w-xs">{searchError}</p></div>
                   ) : searchResults.length === 0 ? (
@@ -692,8 +767,8 @@ create policy "Allow all service role access" on public.watchlist
                     <div className="space-y-1.5">
                       {searchResults.map((item) => (
                         <button key={item.api_id} type="button" onClick={() => setSelectedMedia(item)}
-                          className={`w-full text-left p-2 rounded-xl flex items-center gap-3 border transition-all cursor-pointer ${selectedMedia?.api_id === item.api_id ? 'bg-white border-[#ff0000]' : 'bg-transparent border-transparent hover:bg-white hover:border-zinc-200'}`}>
-                          <div className="w-10 h-14 bg-zinc-200 rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
+                          className={`w-full text-left p-1.5 rounded-xl flex items-center gap-2 border transition-all cursor-pointer ${selectedMedia?.api_id === item.api_id ? 'bg-white border-[#ff0000]' : 'bg-transparent border-transparent hover:bg-white hover:border-zinc-200'}`}>
+                          <div className="w-12 h-16 bg-zinc-200 rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
                             {item.poster_url ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={item.poster_url} alt={item.title} className="w-full h-full object-cover" />
@@ -716,11 +791,11 @@ create policy "Allow all service role access" on public.watchlist
               </div>
 
               {/* Right: config */}
-              <div className="w-full md:w-72 flex flex-col bg-zinc-50 border border-zinc-200 rounded-2xl p-5 shrink-0 justify-between">
+              <div className="w-full md:w-64 flex flex-col bg-zinc-50 border border-zinc-200 rounded-2xl p-4 shrink-0 justify-between">
                 {selectedMedia ? (
-                  <form onSubmit={handleAddItemSubmit} className="space-y-4 flex-1 flex flex-col justify-between">
-                    <div className="space-y-4">
-                      <div className="flex gap-3 pb-3.5 border-b border-zinc-200">
+                  <form onSubmit={handleAddItemSubmit} className="space-y-3.5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-3.5">
+                      <div className="flex gap-2.5 pb-3 border-b border-zinc-200">
                         <div className="w-12 h-16 bg-zinc-200 rounded-lg overflow-hidden shrink-0 flex items-center justify-center">
                           {selectedMedia.poster_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -738,7 +813,7 @@ create policy "Allow all service role access" on public.watchlist
                       <div className="space-y-1.5">
                         <label className="text-[9px] font-medium text-zinc-400 tracking-widest block">Status</label>
                         <select value={newItemStatus} onChange={(e: any) => setNewItemStatus(e.target.value)}
-                          className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2.5 text-xs font-normal text-zinc-700 focus:outline-none focus:border-[#ff0000]">
+                          className="w-full bg-white border border-zinc-200 rounded-full px-4 py-2.5 text-xs font-normal text-zinc-700 focus:outline-none focus:border-[#ff0000] appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%252371717a%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%2%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_14px_center] bg-[size:16px_16px] pr-9 cursor-pointer">
                           <option value="plan_to_watch">Plan to watch</option>
                           <option value="watching">Watching</option>
                           <option value="completed">Completed</option>
@@ -747,11 +822,11 @@ create policy "Allow all service role access" on public.watchlist
                       <div className="space-y-1.5">
                         <label className="text-[9px] font-medium text-zinc-400 tracking-widest block">Notes</label>
                         <textarea value={newItemNotes} onChange={(e) => setNewItemNotes(e.target.value)} placeholder="Your thoughts..." rows={3}
-                          className="w-full bg-white border border-zinc-200 rounded-xl p-3 text-xs placeholder-zinc-400 text-zinc-800 resize-none font-normal" />
+                          className="w-full bg-white border border-zinc-200 rounded-xl p-2.5 text-xs placeholder-zinc-400 text-zinc-800 resize-none font-normal" />
                       </div>
                     </div>
                     <button type="submit" disabled={isSubmitting}
-                      className="w-full bg-[#ff0000] hover:bg-[#d60000] disabled:opacity-80 text-white font-medium py-3 rounded-full text-xs cursor-pointer flex items-center justify-center gap-1.5 mt-4">
+                      className="w-full bg-[#ff0000] hover:bg-[#d60000] disabled:opacity-80 text-white font-medium py-2.5 rounded-full text-xs cursor-pointer flex items-center justify-center gap-1.5 mt-2">
                       {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                       <span>Save to watchlist</span>
                     </button>
@@ -768,6 +843,14 @@ create policy "Allow all service role access" on public.watchlist
           </div>
         </div>
       )}
+
+      {/* ---- MOBILE FLOATING ACTION BUTTON (FAB) ---- */}
+      <button
+        onClick={() => setIsAddModalOpen(true)}
+        className="md:hidden fixed bottom-3 right-3 z-40 w-11 h-11 rounded-full bg-[#ff0000] hover:bg-[#d60000] text-white flex items-center justify-center shadow-lg active:scale-[0.93] transition-all cursor-pointer border border-[#ff0000]"
+      >
+        <Plus className="w-5 h-5" />
+      </button>
 
       {/* ---- TOAST ---- */}
       {toastMessage && (
