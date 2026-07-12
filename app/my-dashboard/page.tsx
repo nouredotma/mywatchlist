@@ -15,9 +15,7 @@ import {
   Search, 
   Plus, 
   Trash2, 
-  Settings as SettingsIcon, 
   LogOut, 
-  Star, 
   Database, 
   Copy, 
   Check, 
@@ -61,18 +59,10 @@ export default function DashboardPage() {
   const [activeStatusFilter, setActiveStatusFilter] = useState<string>('all')
   const [activeTypeFilter, setActiveTypeFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
-  const [sortBy, setSortBy] = useState<'date_added' | 'rating'>('date_added')
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false)
-  
-  // Detail modal for clicking a card
   const [detailItem, setDetailItem] = useState<WatchlistItem | null>(null)
-
-  const [tmdbKey, setTmdbKey] = useState<string>('')
-  const [tmdbKeyInput, setTmdbKeyInput] = useState<string>('')
-  const [isKeySaved, setIsKeySaved] = useState(false)
 
   const [searchType, setSearchType] = useState<'movie_tv' | 'anime'>('movie_tv')
   const [modalSearchQuery, setModalSearchQuery] = useState('')
@@ -82,14 +72,11 @@ export default function DashboardPage() {
 
   const [selectedMedia, setSelectedMedia] = useState<SearchResult | null>(null)
   const [newItemStatus, setNewItemStatus] = useState<'watching' | 'plan_to_watch' | 'completed'>('plan_to_watch')
-  const [newItemRating, setNewItemRating] = useState<number>(0)
   const [newItemNotes, setNewItemNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Edit states (used inside the detail modal)
   const [isEditing, setIsEditing] = useState(false)
   const [editStatus, setEditStatus] = useState<'watching' | 'plan_to_watch' | 'completed'>('plan_to_watch')
-  const [editRating, setEditRating] = useState<number>(0)
   const [editNotes, setEditNotes] = useState('')
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -116,13 +103,7 @@ export default function DashboardPage() {
     }
   }, [activeStatusFilter, activeTypeFilter, searchQuery])
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedKey = localStorage.getItem('my_watchlist_tmdb_key') || ''
-      setTmdbKey(savedKey)
-      setTmdbKeyInput(savedKey)
-    }
-  }, [])
+
 
   useEffect(() => { fetchWatchlist() }, [fetchWatchlist])
 
@@ -143,12 +124,7 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSaveTmdbKey = () => {
-    localStorage.setItem('my_watchlist_tmdb_key', tmdbKeyInput)
-    setTmdbKey(tmdbKeyInput)
-    setIsKeySaved(true)
-    setTimeout(() => setIsKeySaved(false), 2000)
-  }
+
 
   const handleLogout = async () => {
     await logoutAction()
@@ -164,12 +140,12 @@ export default function DashboardPage() {
     setSelectedMedia(null)
     setSearchResults([])
     try {
-      const res = await searchMedia(modalSearchQuery, searchType, tmdbKey)
+      const res = await searchMedia(modalSearchQuery, searchType)
       if (res.success && res.results) {
         setSearchResults(res.results as SearchResult[])
         if (res.results.length === 0) setSearchError('No results found. Try a different query.')
       } else {
-        if (res.error === 'TMDB_KEY_MISSING') setSearchError('TMDB API Key is required. Set it in Settings.')
+        if (res.error === 'TMDB_KEY_MISSING') setSearchError('TMDB API Key is required. Please set it in your .env file.')
         else setSearchError(res.message || 'API Search failed.')
       }
     } catch { setSearchError('Network error while searching.') }
@@ -186,7 +162,6 @@ export default function DashboardPage() {
         type: selectedMedia.type,
         status: newItemStatus,
         poster_url: selectedMedia.poster_url || undefined,
-        rating: newItemRating,
         notes: newItemNotes,
         api_id: selectedMedia.api_id,
         release_year: selectedMedia.release_year,
@@ -198,7 +173,6 @@ export default function DashboardPage() {
         setModalSearchQuery('')
         setSearchResults([])
         setNewItemNotes('')
-        setNewItemRating(0)
         setNewItemStatus('plan_to_watch')
         fetchWatchlist()
       } else { alert(res.error || 'Failed to add item') }
@@ -224,7 +198,6 @@ export default function DashboardPage() {
     try {
       const res = await updateWatchlistItem(detailItem.id, {
         status: editStatus,
-        rating: editRating,
         notes: editNotes,
       })
       if (res.success) {
@@ -245,9 +218,7 @@ export default function DashboardPage() {
   status text not null check (status in ('watching', 'plan_to_watch', 'completed')),
   poster_url text,
   rating int default 0 check (rating >= 0 and rating <= 10),
-  notes text,
-  api_id text,
-  release_year text,
+  notes text, api_id text, release_year text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 alter table public.watchlist enable row level security;
@@ -258,8 +229,11 @@ create policy "Allow all service role access" on public.watchlist
     setTimeout(() => setCopiedSchema(false), 3000)
   }
 
+  // Sort by release year descending (latest first), fallback to created_at
   const sortedWatchlist = [...watchlist].sort((a, b) => {
-    if (sortBy === 'rating') return b.rating - a.rating
+    const yearA = parseInt(a.release_year || '0', 10)
+    const yearB = parseInt(b.release_year || '0', 10)
+    if (yearB !== yearA) return yearB - yearA
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
@@ -284,38 +258,78 @@ create policy "Allow all service role access" on public.watchlist
   return (
     <div className="min-h-screen w-full bg-white flex flex-col px-5 pt-5 pb-8 font-sans text-zinc-800 select-none relative">
       
-      {/* ---- ROW 1: Search, Type pills, Sort, Add media, Profile ---- */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      {/* ---- ROW 1: Profile (left), Search (perfectly centered & widened), Add media (right) ---- */}
+      <div className="flex items-center justify-between w-full mb-3">
         
-        {/* Search input */}
-        <div className="relative w-52">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
-            <Search className="w-3.5 h-3.5" />
+        {/* LEFT: Profile dropdown */}
+        <div className="flex-1 flex justify-start">
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="w-10 h-10 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-medium text-[#ff0000] flex items-center justify-center cursor-pointer hover:bg-zinc-100 transition-colors"
+            >
+              NM
+            </button>
+            {isProfileDropdownOpen && (
+              <div className="absolute left-0 mt-2 w-40 bg-white border border-zinc-200 rounded-2xl p-1.5 z-50">
+                <button
+                  onClick={() => { handleLogout(); setIsProfileDropdownOpen(false) }}
+                  className="w-full text-left px-3.5 py-2 rounded-xl text-xs hover:bg-red-50 text-red-500 transition-colors flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-red-400" />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
           </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search watchlist..."
-            className="w-full bg-zinc-50 border border-zinc-200 rounded-full pl-9 pr-3.5 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-[#ff0000] transition-all font-normal h-9"
-          />
         </div>
 
-        {/* Type sliding pills */}
-        <div className="flex items-center bg-zinc-50 border border-zinc-200 rounded-full p-0.5 h-9 shrink-0 overflow-x-auto no-scrollbar">
+        {/* CENTER: Search input (centered in center of the row & widened) */}
+        <div className="flex-initial">
+          <div className="relative w-80 sm:w-[450px]">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
+              <Search className="w-3.5 h-3.5" />
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search watchlist..."
+              className="w-full bg-zinc-50 border border-zinc-200 rounded-full pl-9 pr-3.5 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-[#ff0000] transition-all font-normal h-10"
+            />
+          </div>
+        </div>
+
+        {/* RIGHT: Add media */}
+        <div className="flex-1 flex justify-end">
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="bg-[#ff0000] hover:bg-[#d60000] text-white font-medium px-5 py-2 rounded-full flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.97] text-xs h-10 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add media</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ---- ROW 2: Filter row (centered) with Type and Status sliding pills side-by-side ---- */}
+      <div className="flex flex-wrap items-center justify-center gap-4 mb-6 w-full">
+        
+        {/* Group 1: Type Sliding Pills Container */}
+        <div className="flex items-center bg-zinc-50 border border-zinc-200 rounded-full p-0.5 h-10 shrink-0 overflow-x-auto no-scrollbar">
           {[
-            { id: 'all', label: 'All' },
+            { id: 'all', label: 'All types' },
             { id: 'movie', label: 'Movies' },
-            { id: 'tv', label: 'TV' },
+            { id: 'tv', label: 'TV shows' },
             { id: 'anime', label: 'Anime' }
           ].map((t) => (
             <button
               key={t.id}
               onClick={() => setActiveTypeFilter(t.id)}
-              className={`px-3.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-all h-full flex items-center whitespace-nowrap ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all h-full flex items-center whitespace-nowrap border ${
                 activeTypeFilter === t.id
-                  ? 'bg-white text-zinc-900 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-600'
+                  ? 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
               }`}
             >
               {t.label}
@@ -323,59 +337,8 @@ create policy "Allow all service role access" on public.watchlist
           ))}
         </div>
 
-        {/* Sort */}
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
-          className="bg-zinc-50 border border-zinc-200 rounded-full px-3.5 py-1.5 text-xs font-normal text-zinc-500 focus:outline-none focus:border-[#ff0000] cursor-pointer h-9"
-        >
-          <option value="date_added">Date added</option>
-          <option value="rating">Rating</option>
-        </select>
-
-        <div className="flex-1" />
-
-        {/* Add media */}
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="bg-[#ff0000] hover:bg-[#d60000] text-white font-medium px-5 py-2 rounded-full flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.97] text-xs h-9"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add media</span>
-        </button>
-
-        {/* Profile dropdown */}
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-            className="w-9 h-9 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-medium text-[#ff0000] flex items-center justify-center cursor-pointer hover:bg-zinc-100 transition-colors"
-          >
-            NM
-          </button>
-          {isProfileDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-40 bg-white border border-zinc-200 rounded-2xl p-1.5 z-50">
-              <button
-                onClick={() => { setIsSettingsOpen(true); setIsProfileDropdownOpen(false) }}
-                className="w-full text-left px-3.5 py-2 rounded-xl text-xs hover:bg-zinc-50 text-zinc-600 transition-colors flex items-center gap-2 cursor-pointer font-medium"
-              >
-                <SettingsIcon className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Settings</span>
-              </button>
-              <button
-                onClick={() => { handleLogout(); setIsProfileDropdownOpen(false) }}
-                className="w-full text-left px-3.5 py-2 rounded-xl text-xs hover:bg-red-50 text-red-500 transition-colors flex items-center gap-2 cursor-pointer font-medium"
-              >
-                <LogOut className="w-3.5 h-3.5 text-red-400" />
-                <span>Sign out</span>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ---- ROW 2: Status sliding pills ---- */}
-      <div className="flex items-center mb-6 overflow-x-auto no-scrollbar">
-        <div className="flex items-center bg-zinc-50 border border-zinc-200 rounded-full p-0.5 h-9 shrink-0">
+        {/* Group 2: Status Sliding Pills Container */}
+        <div className="flex items-center bg-zinc-50 border border-zinc-200 rounded-full p-0.5 h-10 shrink-0 overflow-x-auto no-scrollbar">
           {[
             { id: 'all', label: 'All entries' },
             { id: 'watching', label: 'Watching' },
@@ -385,16 +348,17 @@ create policy "Allow all service role access" on public.watchlist
             <button
               key={filter.id}
               onClick={() => setActiveStatusFilter(filter.id)}
-              className={`px-4 py-1 rounded-full text-xs font-medium cursor-pointer transition-all h-full flex items-center whitespace-nowrap ${
+              className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all h-full flex items-center whitespace-nowrap border ${
                 activeStatusFilter === filter.id
-                  ? 'bg-white text-zinc-900 shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-600'
+                  ? 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-600'
               }`}
             >
               {filter.label}
             </button>
           ))}
         </div>
+
       </div>
 
       {/* ---- CONTENT AREA ---- */}
@@ -460,7 +424,7 @@ create policy "Allow all service role access" on public.watchlist
           )}
         </div>
       ) : (
-        /* ---- 6-COLUMN POSTER GRID (FaselHD-style) ---- */
+        /* ---- 6-COLUMN POSTER GRID ---- */
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 pb-8">
           {sortedWatchlist.map((item) => (
             <div
@@ -469,7 +433,6 @@ create policy "Allow all service role access" on public.watchlist
                 setDetailItem(item)
                 setIsEditing(false)
                 setEditStatus(item.status)
-                setEditRating(item.rating)
                 setEditNotes(item.notes || '')
               }}
               className="group relative cursor-pointer rounded-xl overflow-hidden aspect-[2/3] bg-zinc-200"
@@ -486,44 +449,38 @@ create policy "Allow all service role access" on public.watchlist
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 gap-1">
                   <Film className="w-8 h-8" />
-                  <span className="text-[9px] tracking-wider font-normal">No poster</span>
+                  <span className="text-[10px] tracking-wider font-normal">No poster</span>
                 </div>
               )}
 
-              {/* Hover overlay (FaselHD style) */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-3">
-                {/* Top badges */}
-                <div className="flex justify-between items-start">
-                  <span className="px-2 py-0.5 rounded text-[9px] font-medium bg-white/20 text-white backdrop-blur-sm">
-                    {item.type === 'tv' ? 'TV' : item.type === 'movie' ? 'Movie' : 'Anime'}
-                  </span>
-                  {item.rating > 0 && (
-                    <div className="flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-medium bg-[#ff0000] text-white">
-                      <Star className="w-2.5 h-2.5 fill-current" />
-                      <span>{item.rating}</span>
-                    </div>
-                  )}
+              {/* Type badge - always visible, top left, fully rounded, white bg */}
+              <div className="absolute top-2.5 left-2.5 z-10">
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-white text-zinc-700">
+                  {item.type === 'tv' ? 'TV' : item.type === 'movie' ? 'Movie' : 'Anime'}
+                </span>
+              </div>
+
+              {/* Hover overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-3">
+                {/* Play icon - centered in the middle of the entire card */}
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-11 h-11 rounded-full bg-white/25 flex items-center justify-center">
+                    <Play className="w-5 h-5 text-white fill-current ml-0.5" />
+                  </div>
                 </div>
 
                 {/* Bottom info */}
                 <div>
-                  {/* Play icon */}
-                  <div className="flex justify-center mb-3">
-                    <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      <Play className="w-4 h-4 text-white fill-current ml-0.5" />
-                    </div>
-                  </div>
-
-                  {/* Status pill */}
+                  {/* Status */}
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className={`w-1.5 h-1.5 rounded-full ${getStatusColor(item.status)}`} />
-                    <span className="text-[9px] text-white/70 font-normal">{getStatusLabel(item.status)}</span>
+                    <span className={`w-2 h-2 rounded-full ${getStatusColor(item.status)}`} />
+                    <span className="text-[11px] text-white/70 font-normal">{getStatusLabel(item.status)}</span>
                   </div>
 
                   {/* Title */}
-                  <h4 className="text-white text-xs font-medium line-clamp-2 leading-snug">{item.title}</h4>
+                  <h4 className="text-white text-sm font-medium line-clamp-2 leading-snug">{item.title}</h4>
                   {item.release_year && (
-                    <span className="text-white/50 text-[9px] font-normal mt-0.5 block">{item.release_year}</span>
+                    <span className="text-white/50 text-[11px] font-normal mt-0.5 block">{item.release_year}</span>
                   )}
                 </div>
               </div>
@@ -538,17 +495,13 @@ create policy "Allow all service role access" on public.watchlist
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) { setDetailItem(null); setIsEditing(false) } }}
         >
-          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-2xl overflow-hidden flex flex-col md:flex-row select-none">
+          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-2xl overflow-hidden flex flex-col md:flex-row select-none animate-scale-up">
             
             {/* Left: Poster */}
             <div className="w-full md:w-56 shrink-0 aspect-[2/3] md:aspect-auto bg-zinc-200 relative overflow-hidden">
               {detailItem.poster_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={detailItem.poster_url}
-                  alt={detailItem.title}
-                  className="w-full h-full object-cover"
-                />
+                <img src={detailItem.poster_url} alt={detailItem.title} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 gap-2">
                   <Film className="w-12 h-12" />
@@ -558,56 +511,46 @@ create policy "Allow all service role access" on public.watchlist
             </div>
 
             {/* Right: Info & CTAs */}
-            <div className="flex-1 p-6 flex flex-col justify-between min-w-0">
+            <div className="flex-1 p-6 flex flex-col justify-between min-w-0 relative">
               
               {/* Close button */}
               <button
                 onClick={() => { setDetailItem(null); setIsEditing(false) }}
-                className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-700 cursor-pointer md:relative md:top-0 md:right-0 md:self-end md:mb-2"
+                className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
 
               {!isEditing ? (
-                /* View mode */
                 <div className="flex-1 flex flex-col">
                   {/* Type & Year */}
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-medium text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded">
+                    <span className="text-[11px] font-medium text-zinc-400 bg-zinc-100 px-2.5 py-0.5 rounded-full">
                       {detailItem.type === 'tv' ? 'TV show' : detailItem.type === 'movie' ? 'Movie' : 'Anime'}
                     </span>
                     {detailItem.release_year && (
-                      <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
+                      <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
                         {detailItem.release_year}
                       </span>
                     )}
                   </div>
 
                   {/* Title */}
-                  <h2 className="text-xl font-medium text-zinc-900 mb-3 leading-tight">{detailItem.title}</h2>
+                  <h2 className="text-xl font-medium text-zinc-900 mb-3 leading-tight pr-6">{detailItem.title}</h2>
 
                   {/* Status */}
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-4">
                     <span className={`w-2 h-2 rounded-full ${getStatusColor(detailItem.status)}`} />
-                    <span className="text-xs text-zinc-500 font-normal">{getStatusLabel(detailItem.status)}</span>
+                    <span className="text-sm text-zinc-500 font-normal">{getStatusLabel(detailItem.status)}</span>
                   </div>
-
-                  {/* Rating */}
-                  {detailItem.rating > 0 && (
-                    <div className="flex items-center gap-1.5 mb-3">
-                      <Star className="w-4 h-4 text-[#ff0000] fill-current" />
-                      <span className="text-sm font-medium text-zinc-700">{detailItem.rating}</span>
-                      <span className="text-xs text-zinc-400 font-normal">/ 10</span>
-                    </div>
-                  )}
 
                   {/* Notes */}
                   {detailItem.notes && (
                     <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 mb-4">
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <MessageSquare className="w-3 h-3 text-zinc-400" />
-                        <span className="text-[9px] text-zinc-400 font-medium tracking-wider">Notes</span>
+                        <span className="text-[10px] text-zinc-400 font-medium tracking-wider">Notes</span>
                       </div>
                       <p className="text-xs text-zinc-600 font-normal leading-relaxed">{detailItem.notes}</p>
                     </div>
@@ -625,7 +568,7 @@ create policy "Allow all service role access" on public.watchlist
                     </button>
                     <button
                       onClick={() => handleDeleteItem(detailItem.id, detailItem.title)}
-                      className="px-4 py-2.5 bg-zinc-50 border border-zinc-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500 text-zinc-400 rounded-full transition-all cursor-pointer flex items-center gap-1.5 text-xs font-medium"
+                      className="px-4 py-2.5 bg-red-50 border border-red-200 hover:bg-red-100 text-red-500 rounded-full transition-all cursor-pointer flex items-center gap-1.5 text-xs font-medium"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Delete</span>
@@ -633,10 +576,9 @@ create policy "Allow all service role access" on public.watchlist
                   </div>
                 </div>
               ) : (
-                /* Edit mode */
                 <div className="flex-1 flex flex-col">
                   <span className="text-[10px] text-[#ff0000] font-medium tracking-widest mb-1">Editing</span>
-                  <h3 className="text-base font-medium text-zinc-900 mb-5 truncate">{detailItem.title}</h3>
+                  <h3 className="text-base font-medium text-zinc-900 mb-5 truncate pr-6">{detailItem.title}</h3>
 
                   {/* Status pills */}
                   <div className="mb-4">
@@ -661,21 +603,6 @@ create policy "Allow all service role access" on public.watchlist
                         </button>
                       ))}
                     </div>
-                  </div>
-
-                  {/* Rating */}
-                  <div className="mb-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-[10px] font-medium text-zinc-400 tracking-widest">Score</label>
-                      <span className="text-xs font-medium text-zinc-600 bg-zinc-50 px-2 py-0.5 rounded-lg border border-zinc-200">
-                        {editRating === 0 ? 'No rating' : `${editRating} / 10`}
-                      </span>
-                    </div>
-                    <input
-                      type="range" min="0" max="10" step="1" value={editRating}
-                      onChange={(e) => setEditRating(Number(e.target.value))}
-                      className="w-full accent-[#ff0000] h-1 bg-zinc-200 rounded-lg cursor-pointer"
-                    />
                   </div>
 
                   {/* Notes */}
@@ -716,64 +643,22 @@ create policy "Allow all service role access" on public.watchlist
         </div>
       )}
 
-      {/* ---- SETTINGS MODAL ---- */}
-      {isSettingsOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-md p-6 select-none">
-            <div className="flex items-center justify-between pb-4 border-b border-zinc-200">
-              <div className="flex items-center gap-2">
-                <SettingsIcon className="w-5 h-5 text-[#ff0000]" />
-                <h3 className="font-medium text-lg">Settings</h3>
-              </div>
-              <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-400 hover:text-zinc-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="py-6 space-y-4">
-              <div>
-                <label className="text-xs font-medium text-zinc-400 tracking-wider block mb-2">TMDB API key</label>
-                <input
-                  type="password"
-                  value={tmdbKeyInput}
-                  onChange={(e) => setTmdbKeyInput(e.target.value)}
-                  placeholder="Paste your TMDB API key..."
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm placeholder-zinc-400 focus:outline-none focus:border-[#ff0000] text-zinc-800 font-normal"
-                />
-                <p className="text-[10px] text-zinc-400 mt-2 leading-relaxed font-normal">
-                  Stored in your browser only. Leave blank if set as NEXT_PUBLIC_TMDB_API_KEY in .env.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3 justify-end pt-4 border-t border-zinc-200">
-              <button onClick={() => setIsSettingsOpen(false)} className="bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 text-zinc-600 font-medium px-4 py-2.5 rounded-xl text-xs cursor-pointer">Close</button>
-              <button onClick={handleSaveTmdbKey} className="bg-[#ff0000] hover:bg-[#d60000] text-white font-medium px-5 py-2.5 rounded-full text-xs flex items-center gap-1.5 cursor-pointer">
-                {isKeySaved ? <><Check className="w-4 h-4" /><span>Saved!</span></> : <span>Save key</span>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* ---- ADD MEDIA MODAL ---- */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4">
-          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-4xl max-h-[85vh] flex flex-col p-6 select-none text-zinc-800">
-            {/* Header */}
+          <div className="bg-white border border-zinc-200 rounded-[24px] w-full max-w-4xl max-h-[85vh] flex flex-col p-6 select-none text-zinc-800 animate-scale-up">
             <div className="flex items-center justify-between pb-4 border-b border-zinc-200 flex-shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-center text-[#ff0000]">
-                  <Plus className="w-4 h-4" />
-                </div>
+                <div className="w-8 h-8 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-center text-[#ff0000]"><Plus className="w-4 h-4" /></div>
                 <h3 className="font-medium text-lg">Add new media</h3>
               </div>
-              <button onClick={() => { setIsAddModalOpen(false); setSelectedMedia(null); setSearchResults([]); setModalSearchQuery('') }} className="text-zinc-400 hover:text-zinc-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => { setIsAddModalOpen(false); setSelectedMedia(null); setSearchResults([]); setModalSearchQuery('') }} className="text-zinc-400 hover:text-zinc-700 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 overflow-hidden flex flex-col md:flex-row gap-6 py-6">
-              {/* Left: search panel */}
+              {/* Left: search */}
               <div className="flex-1 flex flex-col min-w-0">
                 <form onSubmit={handleMediaSearch} className="flex gap-2.5 mb-4 flex-shrink-0">
                   <div className="bg-zinc-50 border border-zinc-200 rounded-full p-0.5 shrink-0 flex">
@@ -817,7 +702,7 @@ create policy "Allow all service role access" on public.watchlist
                           <div className="min-w-0 flex-1">
                             <h5 className="text-xs font-medium truncate text-zinc-700">{item.title}</h5>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[9px] font-medium text-zinc-400 bg-white px-1.5 py-0.5 rounded border border-zinc-200">
+                              <span className="text-[9px] font-medium text-zinc-400 bg-white px-1.5 py-0.5 rounded-full border border-zinc-200">
                                 {item.type === 'tv' ? 'TV' : item.type === 'movie' ? 'Movie' : 'Anime'}
                               </span>
                               {item.release_year && <span className="text-[9px] text-zinc-400 flex items-center gap-1"><Calendar className="w-3 h-3" />{item.release_year}</span>}
@@ -830,7 +715,7 @@ create policy "Allow all service role access" on public.watchlist
                 </div>
               </div>
 
-              {/* Right: config panel */}
+              {/* Right: config */}
               <div className="w-full md:w-72 flex flex-col bg-zinc-50 border border-zinc-200 rounded-2xl p-5 shrink-0 justify-between">
                 {selectedMedia ? (
                   <form onSubmit={handleAddItemSubmit} className="space-y-4 flex-1 flex flex-col justify-between">
@@ -858,13 +743,6 @@ create policy "Allow all service role access" on public.watchlist
                           <option value="watching">Watching</option>
                           <option value="completed">Completed</option>
                         </select>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="text-[9px] font-medium text-zinc-400 tracking-widest">Score</label>
-                          <span className="text-[10px] font-medium text-zinc-600 bg-white border border-zinc-200 px-2 py-0.5 rounded-lg">{newItemRating === 0 ? 'No rating' : `${newItemRating} / 10`}</span>
-                        </div>
-                        <input type="range" min="0" max="10" step="1" value={newItemRating} onChange={(e) => setNewItemRating(Number(e.target.value))} className="w-full accent-[#ff0000] h-1 bg-zinc-200 rounded-lg cursor-pointer" />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[9px] font-medium text-zinc-400 tracking-widest block">Notes</label>

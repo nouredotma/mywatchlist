@@ -13,8 +13,12 @@ const JWT_SECRET = new TextEncoder().encode(
 // ----------------------------------------------------
 
 export async function loginAction(usernameInput: string, passwordInput: string) {
-  const adminUsername = process.env.ADMIN_USERNAME || 'nouredotma'
-  const adminPassword = process.env.ADMIN_PASSWORD || 'Noure.1424'
+  const adminUsername = process.env.ADMIN_USERNAME
+  const adminPassword = process.env.ADMIN_PASSWORD
+
+  if (!adminUsername || !adminPassword) {
+    return { success: false, error: 'Server authentication configuration is missing.' }
+  }
 
   if (usernameInput === adminUsername && passwordInput === adminPassword) {
     const token = await new SignJWT({ authenticated: true })
@@ -203,7 +207,7 @@ export async function deleteFromWatchlist(id: string) {
 // TMDB & AniList External Search Action
 // ----------------------------------------------------
 
-export async function searchMedia(query: string, searchType: 'movie_tv' | 'anime', customTmdbKey?: string) {
+export async function searchMedia(query: string, searchType: 'movie_tv' | 'anime') {
   const isAuth = await checkAuth()
   if (!isAuth) {
     throw new Error('Unauthorized')
@@ -215,12 +219,12 @@ export async function searchMedia(query: string, searchType: 'movie_tv' | 'anime
 
   try {
     if (searchType === 'movie_tv') {
-      const tmdbKey = process.env.NEXT_PUBLIC_TMDB_API_KEY || customTmdbKey
+      const tmdbKey = process.env.TMDB_API_KEY || process.env.NEXT_PUBLIC_TMDB_API_KEY
       if (!tmdbKey) {
         return {
           success: false,
           error: 'TMDB_KEY_MISSING',
-          message: 'Missing TMDB API Key. Please add it to your .env file or input it in Settings.',
+          message: 'Missing TMDB API Key. Please add it to your .env file.',
         }
       }
 
